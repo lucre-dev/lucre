@@ -36,13 +36,20 @@ export async function cmdOnboard(opts: {
   }
 
   const state = store.reduce();
-  if (state.mandate) {
+  const replacingSeed =
+    !!state.mandate && !state.mandate.interviewTranscriptHash;
+  if (state.mandate && state.mandate.interviewTranscriptHash) {
     console.log(
-      `mandate already set (v${state.mandateVersion}, ${state.mandate.entries.length} names).`,
+      `mandate already set from interview (v${state.mandateVersion}, ${state.mandate.entries.length} names).`,
     );
-    console.log("re-run after MANDATE_CHANGED support, or wipe LUCRE_HOME for a fresh book.");
+    console.log("desk is ready — run: lucre");
     process.exitCode = 1;
     return;
+  }
+  if (replacingSeed) {
+    console.log(
+      `replacing demo mandate v${state.mandateVersion} with a real interview…\n`,
+    );
   }
 
   loadAlpacaConfigFromEnv();
@@ -174,8 +181,9 @@ Phases: universe → exclusions → tilt → strategy → risk → ratify
   const risk = deriveRisk(twoAm, trim, entries.length);
 
   // ── Compile ────────────────────────────────────────────────────────
+  const basedOnVersion = state.mandateVersion || 0;
   const mandate: Mandate = {
-    version: 1,
+    version: replacingSeed ? basedOnVersion + 1 : 1,
     schemaVersion: 1,
     entries,
     watchlist: [],
@@ -232,10 +240,21 @@ Phases: universe → exclusions → tilt → strategy → risk → ratify
   }
 
   const mandateHash = sha256Hex(JSON.stringify(mandate));
-  const ev = await store.append({
-    kind: "MANDATE_SET",
-    payload: { mandate, mandateHash },
-  });
+  const ev = replacingSeed
+    ? await store.append({
+        kind: "MANDATE_CHANGED",
+        payload: {
+          mandate,
+          mandateHash,
+          basedOnVersion,
+          effectiveAt: null,
+          diffSummary: "onboarding interview replaces demo seed",
+        },
+      })
+    : await store.append({
+        kind: "MANDATE_SET",
+        payload: { mandate, mandateHash },
+      });
   await store.append({
     kind: "INTERVIEW_ARCHIVED",
     payload: {
@@ -245,7 +264,7 @@ Phases: universe → exclusions → tilt → strategy → risk → ratify
   });
 
   console.log(
-    `\nMANDATE_SET v1 seq=${ev.seq} · ${entries.length} names · hash ${mandateHash.slice(0, 12)}…`,
+    `\n${replacingSeed ? "MANDATE_CHANGED" : "MANDATE_SET"} v${mandate.version} seq=${ev.seq} · ${entries.length} names · hash ${mandateHash.slice(0, 12)}…`,
   );
   console.log("next: lucre decide   or   lucre  (desk)");
 }

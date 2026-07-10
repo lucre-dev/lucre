@@ -5,11 +5,15 @@ import { bedrockAuthPresent } from "../tokens.js";
 
 export type DeskReadiness =
   | { ready: true; reason: "ok" }
-  | { ready: false; reason: "no_genesis" | "no_mandate" };
+  | {
+      ready: false;
+      reason: "no_genesis" | "no_mandate" | "no_interview";
+    };
 
 /**
  * Ledger-driven first-run gate.
- * ready = GENESIS + MANDATE_SET. No cloud accounts — just local book state.
+ * ready = GENESIS + mandate from a real interview (transcript hash).
+ * seed-demo / import without interview still counts as incomplete.
  */
 export function getDeskReadiness(home = lucreHome()): DeskReadiness {
   const store = openStore(home);
@@ -18,6 +22,10 @@ export function getDeskReadiness(home = lucreHome()): DeskReadiness {
   const state = store.reduce();
   if (!state.initialized) return { ready: false, reason: "no_genesis" };
   if (!state.mandate) return { ready: false, reason: "no_mandate" };
+  // Demo seed has interviewTranscriptHash: null — force real onboarding once
+  if (!state.mandate.interviewTranscriptHash) {
+    return { ready: false, reason: "no_interview" };
+  }
   return { ready: true, reason: "ok" };
 }
 
@@ -63,12 +71,14 @@ export async function runFirstRunSetup(opts?: {
     console.log("step 2/2  mandate interview — type RATIFY at the end\n");
   } else if (gate.reason === "no_mandate") {
     console.log("book exists — still need a mandate (invest-in-what-you-know)\n");
+  } else if (gate.reason === "no_interview") {
+    console.log(
+      "demo/import mandate found — run the real interview once (type RATIFY to lock it in)\n",
+    );
   }
 
   printTokenHints();
 
-  // Soft block: Alpaca is required for genesis; warn and continue into onboard
-  // which will fail loudly if keys missing.
   if (
     !process.env.ALPACA_PAPER_KEY_ID?.trim() ||
     !process.env.ALPACA_PAPER_SECRET_KEY?.trim()

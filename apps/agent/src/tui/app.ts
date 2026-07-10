@@ -6,45 +6,79 @@ import {
 } from "../brain/bedrock.js";
 import { bedrockAuthPresent } from "../tokens.js";
 import { runAgentTurn } from "./agent.js";
-import { autocompleteSlash, handleSlash } from "./slash.js";
+import {
+  expandSlashPrefix,
+  formatSlashHints,
+  handleSlash,
+  slashCompleter,
+  SLASH_COMMANDS,
+} from "./slash.js";
 import { readStatus } from "./status.js";
 import { bold, c, dim, paint } from "./theme.js";
 
 /**
  * Minimalist interactive CLI — Grok-inspired:
- * status strip · scrollback stream · › prompt · slash commands · agent tools
+ * status strip · scrollback · › prompt · slash commands (tab + live hints)
  */
 export async function startTui(opts?: { model?: string }): Promise<void> {
-  let modelId = opts?.model || process.env.LUCRE_BEDROCK_MODEL || DEFAULT_BEDROCK_MODEL;
+  let modelId =
+    opts?.model || process.env.LUCRE_BEDROCK_MODEL || DEFAULT_BEDROCK_MODEL;
   const history: BedrockMessage[] = [];
   let busy = false;
   let closed = false;
+  /** Avoid spamming slash menu on every keystroke */
+  let lastHintKey = "";
 
-  // Don't enter full alternate screen — stream like Claude Code / Grok chat.
-  // Feels native in tmux/iTerm without fighting scrollback.
   printBanner(modelId);
+
+  if (process.stdin.isTTY) {
+    readline.emitKeypressEvents(process.stdin);
+  }
 
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    terminal: true,
+    terminal: !!process.stdin.isTTY,
     historySize: 200,
-    completer: (line: string) => {
-      if (!line.startsWith("/")) return [[], line] as [string[], string];
-      const hits = autocompleteSlash(line);
-      return [hits.length ? hits : autocompleteSlash(""), line] as [
-        string[],
-        string,
-      ];
-    },
+    completer: slashCompleter,
   });
+
+  // Live slash menu: when line starts with /, show matching commands
+  if (process.stdin.isTTY && typeof process.stdin.setRawMode === "function") {
+    process.stdin.on("keypress", (_str, key) => {
+      if (closed || busy || !key) return;
+      // After keypress, readline updates line on next tick
+      setImmediate(() => {
+        if (closed || busy) return;
+        const line = rl.line ?? "";
+        if (!line.startsWith("/")) {
+          lastHintKey = "";
+          return;
+        }
+        const hintKey = line.split(/\s+/)[0] ?? line;
+        if (hintKey === lastHintKey) return;
+        lastHintKey = hintKey;
+        // Clear-ish: print hints on their own line under the prompt
+        process.stdout.write("\n" + formatSlashHints(hintKey) + "\n");
+        rl.prompt(true);
+      });
+    });
+  }
 
   const prompt = () => {
     if (closed) return;
     const st = readStatus();
     process.stdout.write("\n" + dim(st.line) + "\n");
+    process.stdout.write(
+      dim(
+        "  " +
+          SLASH_COMMANDS.map((c) => `/${c.name}`).join("  ") +
+          "   · tab to complete",
+      ) + "\n",
+    );
     rl.setPrompt(paint(c.orange, "›") + " ");
     rl.prompt();
+    lastHintKey = "";
   };
 
   const queue: string[] = [];
@@ -54,8 +88,33 @@ export async function startTui(opts?: { model?: string }): Promise<void> {
     busy = true;
     try {
       while (queue.length && !closed) {
-        const line = queue.shift()!;
+        let line = queue.shift()!;
         if (!line) continue;
+
+        // Unique prefix expand: /ba → /balance
+        if (line.startsWith("/")) {
+          const expanded = expandSlashPrefix(line);
+          if (expanded && expanded !== line) {
+            println(dim(`→ ${expanded}`));
+            line = expanded;
+          } else if (line === "/") {
+            line = "/help";
+          } else {
+            const head = line.split(/\s+/)[0] ?? line;
+            const hits = slashCompleter(head)[0];
+            const known = SLASH_COMMANDS.some((c) => `/${c.name}` === head);
+            if (!known && hits.length > 1) {
+              println(dim("ambiguous — pick one:"));
+              println(formatSlashHints(head));
+              continue;
+            }
+            if (!known && hits.length === 0) {
+              println(dim(`unknown ${head} — /help`));
+              continue;
+            }
+          }
+        }
+
         try {
           if (line.startsWith("/")) {
             const res = await handleSlash(line);
@@ -110,7 +169,6 @@ export async function startTui(opts?: { model?: string }): Promise<void> {
     process.exit(0);
   });
 
-  // Ctrl+C: if busy, message; else exit on double
   let lastSigint = 0;
   rl.on("SIGINT", () => {
     const now = Date.now();
@@ -140,7 +198,6 @@ async function agentChat(
   for await (const ev of runAgentTurn(text, history, { modelId })) {
     switch (ev.type) {
       case "status":
-        // soft status, overwrite-ish
         process.stdout.write(dim(`  ${ev.text ?? ""}\r`));
         break;
       case "text":
@@ -188,7 +245,7 @@ function printBanner(modelId: string): void {
   println(dim(st.line));
   println(
     dim(
-      `bedrock ${shortModel(modelId)} · /help · /balance · /profit · /usage`,
+      `bedrock ${shortModel(modelId)} · type / for commands · tab completes`,
     ),
   );
   if (!bedrockAuthPresent()) {
@@ -201,6 +258,7 @@ function shortModel(id: string): string {
   if (!id) return "?";
   if (id.includes("haiku")) return "haiku";
   if (id === DEFAULT_BEDROCK_MODEL || id.includes("sonnet")) return "sonnet";
+  if (id === STRONG_BEDROCK_MODEL) return "sonnet";
   const parts = id.split(/[./]/);
   return parts[parts.length - 1]?.slice(0, 28) || id.slice(0, 28);
 }

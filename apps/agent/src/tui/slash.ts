@@ -95,10 +95,49 @@ export async function handleSlash(line: string): Promise<SlashResult> {
 }
 
 export function autocompleteSlash(partial: string): string[] {
-  const p = partial.replace(/^\//, "").toLowerCase();
+  const head = partial.split(/\s+/)[0] ?? partial;
+  const p = head.replace(/^\//, "").toLowerCase();
   return SLASH_COMMANDS.filter((c) => c.name.startsWith(p)).map(
     (c) => "/" + c.name,
   );
+}
+
+/** Expand unique prefix: /ba → /balance. Null if ambiguous or unknown. */
+export function expandSlashPrefix(line: string): string | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("/")) return null;
+  const parts = trimmed.split(/\s+/);
+  const head = parts[0] ?? "";
+  const exact = SLASH_COMMANDS.find((c) => `/${c.name}` === head);
+  if (exact) return trimmed;
+  const hits = autocompleteSlash(head);
+  if (hits.length === 1) {
+    const rest = parts.slice(1).join(" ");
+    return rest ? `${hits[0]} ${rest}` : hits[0]!;
+  }
+  return null;
+}
+
+export function formatSlashHints(filter = ""): string {
+  const hits = filter
+    ? autocompleteSlash(filter.startsWith("/") ? filter : `/${filter}`)
+    : SLASH_COMMANDS.map((c) => `/${c.name}`);
+  if (!hits.length) return dimHint("  (no match — /help)");
+  return dimHint("  " + hits.join("  "));
+}
+
+function dimHint(s: string): string {
+  return `\x1b[2m\x1b[38;5;245m${s}\x1b[0m`;
+}
+
+/** Tab-complete for readline. Shows matches when several; fills when unique. */
+export function slashCompleter(line: string): [string[], string] {
+  if (!line.startsWith("/")) return [[], line];
+  const hits = autocompleteSlash(line);
+  if (hits.length === 0) {
+    return [SLASH_COMMANDS.map((c) => `/${c.name}`), line];
+  }
+  return [hits, line];
 }
 
 function formatBalance(): string {
