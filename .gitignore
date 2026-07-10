@@ -1,7 +1,10 @@
 node_modules/
 dist/
+.turbo/
+*.tsbuildinfo
 .env
 .env.*
 *.log
 .DS_Store
 ledger/*.local.*
+~/.lucre/

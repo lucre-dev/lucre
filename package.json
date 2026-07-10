@@ -1,0 +1,18 @@
+{
+  "name": "lucre",
+  "private": true,
+  "description": "Personal autonomous trading agent — event-sourced ledger + Alpaca + daily AI decision.",
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "turbo build",
+    "test": "turbo test",
+    "typecheck": "turbo typecheck",
+    "lucre": "node apps/agent/dist/index.js"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.0",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.5"
+  },
+  "packageManager": "pnpm@9.15.4"
+}
