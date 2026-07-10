@@ -17,11 +17,13 @@ Usage:
   lucre status                        human summary of ledger state
   lucre mandate seed-demo             install demo Lynch universe (AAPL…)
   lucre mandate import <file.json>    MANDATE_SET / CHANGED from JSON
-  lucre run [--dry-run] [--allow-buy] [--execute]
-                                      one stub-brain decision cycle
+  lucre run [--brain stub|openai|terra] [--dry-run] [--allow-buy] [--execute]
+                                      one decision cycle (default brain=stub)
 
 Env:
   ALPACA_PAPER_KEY_ID / ALPACA_PAPER_SECRET_KEY   (from ~/.tokens)
+  OPENAI_API_KEY                                (for --brain openai|terra)
+  LUCRE_DECISION_MODEL                          (default: ledger / gpt-4.1)
   LUCRE_HOME   override data dir (default ~/.lucre)
 `);
   process.exit(1);
@@ -85,13 +87,25 @@ async function main(): Promise<void> {
       }
       break;
     }
-    case "run":
+    case "run": {
+      const brainRaw = argValue(rest, "--brain") ?? "stub";
+      const brain =
+        brainRaw === "openai" || brainRaw === "terra" || brainRaw === "stub"
+          ? brainRaw
+          : null;
+      if (!brain) {
+        console.error("--brain must be stub | openai | terra");
+        process.exitCode = 1;
+        break;
+      }
       await cmdRun({
         dryRun: hasFlag(rest, "--dry-run"),
         allowBuy: hasFlag(rest, "--allow-buy"),
         execute: hasFlag(rest, "--execute"),
+        brain,
       });
       break;
+    }
     case "help":
     case "--help":
     case "-h":

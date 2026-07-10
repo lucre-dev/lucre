@@ -48,20 +48,21 @@ pnpm test
 pnpm lucre init
 pnpm lucre sync
 pnpm lucre mandate seed-demo   # or: mandate import universe.json
-pnpm lucre run                 # stub brain → WAIT / menu
-pnpm lucre run --allow-buy --execute   # stub may place a 1-share test buy
-pnpm lucre verify
-pnpm lucre status
+pnpm lucre run                              # stub brain
+pnpm lucre run --brain openai               # real model (OPENAI_API_KEY)
+pnpm lucre run --brain openai --execute     # decide + place limit if not WAIT
+pnpm lucre verify && pnpm lucre status
 ```
 
 Ledger: `~/.lucre/events.jsonl` (override with `LUCRE_HOME`).
 
 ## Costs
 
-Target all-in: **~$6–10/month** (Terra batch daily decision, mini screens, Sol weekly review). Alpaca: $0 commissions, free IEX data. Scheduler: local `launchd` (no droplet).
+Target all-in: **~$6–10/month**. Inference metered as `INFERENCE_RECORDED` against `monthlySpendCapCents` ($10 default). Alpaca free; local `launchd` scheduler (later).
 
 ## Status
 
-- **M0** — types + pure core (reducer, hash chain, legal moves)
-- **M1** — JSONL store, Alpaca client, `init` / `sync` / `verify` / `status`
-- **M2 (in progress)** — stub brain, executor (`ORDER_SUBMITTED` before POST), SimBroker chaos tests, `lucre run`
+- **M0** — types + pure core
+- **M1** — JSONL + Alpaca sync/verify
+- **M2** — stub brain, executor, SimBroker tests
+- **M3 (partial)** — OpenAI `decide()` + structured decision schema + spend metering

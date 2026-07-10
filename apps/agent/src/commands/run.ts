@@ -2,26 +2,33 @@ import { randomUUID } from "node:crypto";
 import {
   assertMoveLegal,
   computeLegalMoves,
+  getMonthSpend,
+  isAnalysisHalted,
   LEGAL_MOVES_ALGO_VERSION,
 } from "@lucre/core";
 import type { LegalMove } from "@lucre/types";
 import { createAlpacaClient, loadAlpacaConfigFromEnv } from "../alpaca/client.js";
+import {
+  createBrain,
+  type BrainKind,
+} from "../brain/index.js";
 import { alpacaAsBroker } from "../broker/alpacaBroker.js";
-import { stubDecide } from "../brain/stub.js";
 import { executeLimitMove } from "../executor.js";
 import { lucreHome } from "../paths.js";
 import { fetchBrokerSnapshot } from "../reconcile.js";
 import { openStore } from "../store/jsonl.js";
 
 /**
- * One decision cycle with the stub brain (M2).
- * Real LLM brain lands in M3.
+ * One decision cycle.
+ * --brain stub|openai|terra  (default stub)
+ * Real LLM records INFERENCE_RECORDED and respects monthly spend cap.
  */
 export async function cmdRun(opts: {
   home?: string;
   dryRun?: boolean;
   allowBuy?: boolean;
   execute?: boolean;
+  brain?: BrainKind;
 }): Promise<void> {
   const home = opts.home ?? lucreHome();
   const store = openStore(home);
@@ -32,9 +39,11 @@ export async function cmdRun(opts: {
     return;
   }
 
+  const brainKind: BrainKind = opts.brain ?? "stub";
   loadAlpacaConfigFromEnv();
   const client = createAlpacaClient();
   const tradingDay = new Date().toISOString().slice(0, 10);
+  const monthKey = tradingDay.slice(0, 7);
   const runId = randomUUID();
 
   if (!opts.dryRun) {
@@ -63,6 +72,20 @@ export async function cmdRun(opts: {
     });
   }
   state = store.reduce();
+
+  if (isAnalysisHalted(state) && brainKind !== "stub") {
+    console.error(
+      `analysis halted (risk=${state.riskHalted}/${state.riskHaltReason} budget=${state.budgetHalted}) — skipping brain`,
+    );
+    if (!opts.dryRun) {
+      await store.append({
+        kind: "RUN_COMPLETED",
+        payload: { runId: runId as never, summary: "halted" },
+      });
+    }
+    process.exitCode = 1;
+    return;
+  }
 
   // Quotes for universe + holdings
   const tickers = new Set<string>();
@@ -94,7 +117,7 @@ export async function cmdRun(opts: {
     }
   }
 
-  // Fail-closed exclusion data: empty map → hard exclusions block all if any exist
+  // M3 still marks universe clean for hard exclusions (screening job later)
   const exclusionData = new Map<
     string,
     Map<string, { involved: boolean | null; revenuePct?: number | null }>
@@ -106,8 +129,6 @@ export async function cmdRun(opts: {
         { involved: boolean | null; revenuePct?: number | null }
       >();
       for (const rule of state.mandate.exclusions) {
-        // M2: assume clean unless hard-coded — mark involved=false for all
-        // (real screening is M3). Still fail-closed if we skip this.
         cats.set(rule.category, { involved: false, revenuePct: 0 });
       }
       exclusionData.set(e.assetId, cats);
@@ -146,9 +167,92 @@ export async function cmdRun(opts: {
     });
   }
 
-  const decision = stubDecide(moves, { allowBuy: opts.allowBuy });
+  const modelHint = state.decisionModel || "gpt-4.1";
+
+  console.log(`brain: ${brainKind} modelHint=${modelHint}`);
+  console.log(
+    `spend ${monthKey}: ${getMonthSpend(state, monthKey)}¢ / cap ${state.risk.monthlySpendCapCents}¢`,
+  );
+
+  let brain;
+  try {
+    brain = createBrain(brainKind, {
+      allowBuy: opts.allowBuy,
+      model: brainKind === "stub" ? undefined : modelHint,
+    });
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : err);
+    process.exitCode = 1;
+    return;
+  }
+
+  let decision;
+  let decisionMeta: {
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    costCents: number;
+    provider: string;
+    raw: string;
+  } | null = null;
+
+  try {
+    const result = await brain.decide({
+      tradingDay,
+      state,
+      moves,
+      quotes,
+      memoryNotes: [],
+      model: modelHint,
+    });
+    decision = result.decision;
+    decisionMeta = {
+      model: result.model,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      costCents: result.costCents,
+      provider: result.provider,
+      raw: result.raw,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`brain failed: ${msg}`);
+    if (!opts.dryRun) {
+      await store.append({
+        kind: "DECISION_REJECTED",
+        payload: { reason: `brain: ${msg}`, tradingDay },
+      });
+      await store.append({
+        kind: "RUN_FAILED",
+        payload: { runId: runId as never, error: msg },
+      });
+    }
+    process.exitCode = 1;
+    return;
+  }
+
   console.log(`decision: moveId=${decision.moveId}`);
   console.log(`  thesis: ${decision.thesis}`);
+  if (decisionMeta && decisionMeta.provider !== "stub") {
+    console.log(
+      `  tokens in/out ${decisionMeta.inputTokens}/${decisionMeta.outputTokens} · ~${decisionMeta.costCents}¢ · ${decisionMeta.model}`,
+    );
+  }
+
+  if (!opts.dryRun && decisionMeta && decisionMeta.provider !== "stub") {
+    await store.append({
+      kind: "INFERENCE_RECORDED",
+      payload: {
+        provider: decisionMeta.provider,
+        model: decisionMeta.model,
+        inputTokens: decisionMeta.inputTokens,
+        outputTokens: decisionMeta.outputTokens,
+        costCents: decisionMeta.costCents,
+        purpose: "decision",
+        monthKey,
+      },
+    });
+  }
 
   let chosen: LegalMove;
   try {
@@ -160,6 +264,7 @@ export async function cmdRun(opts: {
         kind: "DECISION_REJECTED",
         payload: {
           reason: err instanceof Error ? err.message : String(err),
+          raw: decisionMeta?.raw?.slice(0, 2000),
           tradingDay,
         },
       });
@@ -189,6 +294,18 @@ export async function cmdRun(opts: {
       menuMoveIds: moves.map((m) => m.id),
     },
   });
+
+  // Memory note from model
+  if (decision.noteToFutureSelf) {
+    await store.append({
+      kind: "MEMORY_WRITTEN",
+      payload: {
+        path: `memory/${tradingDay}.note`,
+        sha256: "inline", // full file store in later revision
+        tradingDay,
+      },
+    });
+  }
 
   if (chosen.kind === "WAIT" || !opts.execute) {
     if (chosen.kind !== "WAIT" && !opts.execute) {

@@ -49,8 +49,9 @@ Stub brain + `lucre run`, executor with SimBroker chaos tests (no duplicate clie
 Still open: scheduled launchd timers, full 120-day replay harness, corp-action API sync job.
 **Done when:** zero unexplained drift, zero duplicate orders across replays.
 
-### M3 — real brain
-Terra decision, mini screens, batch state machine, memory, spend metering.
+### M3 — real brain (partial ✅)
+OpenAI brain with strict json_schema → Decision; `INFERENCE_RECORDED` + monthly cap; `lucre run --brain openai|terra`.
+Still open: Batch API overnight path, Haiku/mini screens, memory files, 5-day paper streak.
 **Done when:** 5 consecutive live paper days with decisions in budget.
 
 ### M4 — soak
