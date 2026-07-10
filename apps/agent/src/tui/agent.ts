@@ -6,9 +6,13 @@ import {
   type BedrockMessage,
   DEFAULT_BEDROCK_MODEL,
 } from "../brain/bedrock.js";
-import { openStore } from "../store/jsonl.js";
-import { lucreHome } from "../paths.js";
 import { getCash, getEquity } from "@lucre/core";
+import { lucreHome } from "../paths.js";
+import { openStore } from "../store/jsonl.js";
+import {
+  estimateBedrockCostCents,
+  recordSessionUsage,
+} from "./sessionUsage.js";
 import { runTool, TOOL_SPECS } from "./tools.js";
 
 export interface AgentEvent {
@@ -111,6 +115,7 @@ export async function* runAgentTurn(
 
     const uses = toolUsesFromContent(result.message.content);
     if (uses.length === 0 || result.stopReason === "end_turn") {
+      await meterInference(totalIn, totalOut, result.model);
       yield {
         type: "usage",
         inputTokens: totalIn,
@@ -118,7 +123,6 @@ export async function* runAgentTurn(
         model: result.model,
       };
       yield { type: "done" };
-      // update history for caller
       history.length = 0;
       history.push(...messages);
       return;
@@ -147,10 +151,45 @@ export async function* runAgentTurn(
     messages.push({ role: "user", content: toolResults });
   }
 
+  await meterInference(totalIn, totalOut, opts?.modelId || DEFAULT_BEDROCK_MODEL);
   yield { type: "error", text: "max tool rounds reached" };
   history.length = 0;
   history.push(...messages);
   yield { type: "done" };
+}
+
+async function meterInference(
+  inputTokens: number,
+  outputTokens: number,
+  model: string,
+): Promise<void> {
+  const costCents = estimateBedrockCostCents({
+    model,
+    inputTokens,
+    outputTokens,
+  });
+  recordSessionUsage({ inputTokens, outputTokens, costCents, model });
+
+  // Persist to ledger when a book exists (feeds /usage month + budget halt)
+  try {
+    const store = openStore(lucreHome());
+    if (!store.load().length) return;
+    const monthKey = new Date().toISOString().slice(0, 7);
+    await store.append({
+      kind: "INFERENCE_RECORDED",
+      payload: {
+        provider: "bedrock",
+        model,
+        inputTokens,
+        outputTokens,
+        costCents,
+        purpose: "other",
+        monthKey,
+      },
+    });
+  } catch {
+    // metering must never break the chat
+  }
 }
 
 function summarizeInput(input: Record<string, unknown>): string {

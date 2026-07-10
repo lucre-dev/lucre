@@ -1,6 +1,9 @@
 import * as readline from "node:readline";
 import type { BedrockMessage } from "../brain/bedrock.js";
-import { DEFAULT_BEDROCK_MODEL, FAST_BEDROCK_MODEL } from "../brain/bedrock.js";
+import {
+  DEFAULT_BEDROCK_MODEL,
+  STRONG_BEDROCK_MODEL,
+} from "../brain/bedrock.js";
 import { bedrockAuthPresent } from "../tokens.js";
 import { runAgentTurn } from "./agent.js";
 import { autocompleteSlash, handleSlash } from "./slash.js";
@@ -37,66 +40,68 @@ export async function startTui(opts?: { model?: string }): Promise<void> {
   });
 
   const prompt = () => {
+    if (closed) return;
     const st = readStatus();
     process.stdout.write("\n" + dim(st.line) + "\n");
     rl.setPrompt(paint(c.orange, "›") + " ");
     rl.prompt();
   };
 
-  prompt();
+  const queue: string[] = [];
 
-  rl.on("line", async (input) => {
-    const line = input.trim();
-    if (!line) {
-      prompt();
-      return;
-    }
-    if (busy) {
-      println(dim("still working — wait or Ctrl+C"));
-      return;
-    }
-
+  const drain = async () => {
+    if (busy) return;
     busy = true;
     try {
-      if (line.startsWith("/")) {
-        const res = await handleSlash(line);
-        if (res.lines?.length) {
-          for (const l of res.lines) println(l);
-        }
-        if (res.model) {
-          modelId = res.model;
-          println(dim(`using ${modelId}`));
-        }
-        if (res.clear) {
-          history.length = 0;
-        }
-        if (res.quit) {
-          println(dim("bye"));
-          closed = true;
-          rl.close();
-          return;
-        }
-        if (res.agentPrompt) {
-          await agentChat(res.agentPrompt, history, modelId);
-        }
-      } else {
-        if (!bedrockAuthPresent()) {
+      while (queue.length && !closed) {
+        const line = queue.shift()!;
+        if (!line) continue;
+        try {
+          if (line.startsWith("/")) {
+            const res = await handleSlash(line);
+            if (res.lines?.length) {
+              for (const l of res.lines) println(l);
+            }
+            if (res.model) {
+              modelId = res.model;
+              println(dim(`using ${modelId}`));
+            }
+            if (res.quit) {
+              println(dim("bye"));
+              closed = true;
+              rl.close();
+              return;
+            }
+            if (res.agentPrompt) {
+              await agentChat(res.agentPrompt, history, modelId);
+            }
+          } else if (!bedrockAuthPresent()) {
+            println(
+              paint(
+                c.red,
+                "no AWS Bedrock token — set AWS_BEARER_TOKEN_BEDROCK in ~/.tokens",
+              ),
+            );
+          } else {
+            await agentChat(line, history, modelId);
+          }
+        } catch (err) {
           println(
-            paint(
-              c.red,
-              "no AWS Bedrock token — set AWS_BEARER_TOKEN_BEDROCK in ~/.tokens",
-            ),
+            paint(c.red, err instanceof Error ? err.message : String(err)),
           );
-        } else {
-          await agentChat(line, history, modelId);
         }
       }
-    } catch (err) {
-      println(paint(c.red, err instanceof Error ? err.message : String(err)));
     } finally {
       busy = false;
       if (!closed) prompt();
     }
+  };
+
+  prompt();
+
+  rl.on("line", (input) => {
+    queue.push(input.trim());
+    void drain();
   });
 
   rl.on("close", () => {
@@ -183,7 +188,7 @@ function printBanner(modelId: string): void {
   println(dim(st.line));
   println(
     dim(
-      `bedrock ${shortModel(modelId)} · /help · chat to agent · /bash for shell`,
+      `bedrock ${shortModel(modelId)} · /help · /balance · /profit · /usage`,
     ),
   );
   if (!bedrockAuthPresent()) {
@@ -194,8 +199,8 @@ function printBanner(modelId: string): void {
 
 function shortModel(id: string): string {
   if (!id) return "?";
-  if (id === DEFAULT_BEDROCK_MODEL) return "sonnet-4.5";
-  if (id === FAST_BEDROCK_MODEL) return "haiku-4.5";
+  if (id === DEFAULT_BEDROCK_MODEL || id.includes("haiku")) return "haiku";
+  if (id === STRONG_BEDROCK_MODEL || id.includes("sonnet")) return "sonnet";
   const parts = id.split(/[./]/);
   return parts[parts.length - 1]?.slice(0, 28) || id.slice(0, 28);
 }

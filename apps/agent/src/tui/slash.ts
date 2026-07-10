@@ -1,39 +1,37 @@
-import { DEFAULT_BEDROCK_MODEL, FAST_BEDROCK_MODEL } from "../brain/bedrock.js";
-import { runInit, runTool, runVerifyCmd } from "./tools.js";
+import {
+  getCash,
+  getEquity,
+  getMonthSpend,
+  getOpenOrders,
+  getPositions,
+} from "@lucre/core";
+import {
+  DEFAULT_BEDROCK_MODEL,
+  STRONG_BEDROCK_MODEL,
+} from "../brain/bedrock.js";
+import { lucreHome } from "../paths.js";
+import { openStore } from "../store/jsonl.js";
+import { getSessionUsage } from "./sessionUsage.js";
 import { readStatus } from "./status.js";
 
 export interface SlashResult {
-  /** If set, feed this to the agent as a user message instead. */
   agentPrompt?: string;
-  /** Print lines to scrollback. */
   lines?: string[];
-  /** Quit TUI */
   quit?: boolean;
-  /** Clear history */
-  clear?: boolean;
-  /** Switch model id */
   model?: string;
 }
 
-export const SLASH_COMMANDS: {
-  name: string;
-  desc: string;
-  aliases?: string[];
-}[] = [
-  { name: "help", desc: "Show commands" },
-  { name: "status", desc: "Portfolio + chain status" },
-  { name: "sync", desc: "Reconcile with Alpaca paper" },
-  { name: "verify", desc: "Verify hash chain" },
-  { name: "init", desc: "GENESIS from Alpaca cash" },
-  { name: "run", desc: "Stub decision cycle (add --execute to trade)" },
-  { name: "mandate", desc: "seed-demo universe" },
-  { name: "positions", desc: "Alias for status positions" },
-  { name: "broker", desc: "Live Alpaca snapshot" },
-  { name: "tail", desc: "Last ledger events" },
-  { name: "bash", desc: "Run shell: /bash <cmd>" },
-  { name: "model", desc: "Show or set Bedrock model" },
-  { name: "clear", desc: "Clear conversation", aliases: ["new"] },
-  { name: "quit", desc: "Exit", aliases: ["exit", "q"] },
+/** Core desk commands only — no aliases. */
+export const SLASH_COMMANDS: { name: string; desc: string }[] = [
+  { name: "status", desc: "system health" },
+  { name: "balance", desc: "cash & equity" },
+  { name: "profit", desc: "gain or loss" },
+  { name: "positions", desc: "what we hold" },
+  { name: "trades", desc: "what traded" },
+  { name: "usage", desc: "inference spend" },
+  { name: "model", desc: "show or set the brain" },
+  { name: "help", desc: "list commands" },
+  { name: "quit", desc: "exit" },
 ];
 
 export async function handleSlash(line: string): Promise<SlashResult> {
@@ -46,119 +44,176 @@ export async function handleSlash(line: string): Promise<SlashResult> {
 
   switch (name) {
     case "help":
-    case "h":
-    case "?":
       return {
         lines: [
-          "slash commands",
-          ...SLASH_COMMANDS.map(
-            (c) =>
-              `  /${c.name.padEnd(10)} ${c.desc}${c.aliases ? ` (${c.aliases.map((a) => "/" + a).join(", ")})` : ""}`,
-          ),
+          "commands",
+          ...SLASH_COMMANDS.map((c) => `  /${c.name.padEnd(10)} ${c.desc}`),
           "",
-          "chat freely for the agent (Bedrock + tools).",
-          "tools: bash, ledger_*, broker_*, decision_run, mandate_seed_demo",
+          "talk for strategy, decide, sync — the agent has tools.",
+          "headless: lucre decide [--execute]",
         ],
       };
 
     case "status":
-    case "positions": {
-      const st = readStatus();
-      const tr = await runTool("ledger_status", {});
-      return { lines: [st.line, "", tr.output] };
-    }
+      return { lines: [readStatus().line] };
 
-    case "sync": {
-      const tr = await runTool("broker_sync", {
-        dry_run: args.includes("--dry-run"),
-      });
-      return { lines: [tr.output] };
-    }
+    case "balance":
+      return { lines: [formatBalance()] };
 
-    case "verify": {
-      const out = await runVerifyCmd();
-      return { lines: [out] };
-    }
+    case "profit":
+      return { lines: [formatProfit()] };
 
-    case "init": {
-      const out = await runInit();
-      return { lines: [out] };
-    }
+    case "positions":
+      return { lines: [formatPositions()] };
 
-    case "run": {
-      const execute = args.includes("--execute");
-      const tr = await runTool("decision_run", {
-        brain: "stub",
-        execute,
-        dry_run: args.includes("--dry-run"),
-      });
-      return { lines: [tr.output] };
-    }
+    case "trades":
+      return { lines: [formatTrades(Number(args) || 20)] };
 
-    case "mandate": {
-      if (args === "seed-demo" || args === "" || args === "seed") {
-        const tr = await runTool("mandate_seed_demo", {});
-        return { lines: [tr.output] };
-      }
-      return { lines: ["usage: /mandate seed-demo"] };
-    }
+    case "usage":
+      return { lines: [formatUsage()] };
 
-    case "broker": {
-      const tr = await runTool("broker_snapshot", {});
-      return { lines: [tr.output] };
-    }
-
-    case "tail": {
-      const n = Number(args) || 12;
-      const tr = await runTool("ledger_tail", { n });
-      return { lines: [tr.output] };
-    }
-
-    case "bash":
-    case "!": {
-      if (!args) return { lines: ["usage: /bash <command>"] };
-      const tr = await runTool("bash", { command: args });
-      return { lines: [tr.ok ? tr.output : `error: ${tr.output}`] };
-    }
-
-    case "model":
-    case "m": {
+    case "model": {
       if (!args) {
         return {
           lines: [
-            `default: ${DEFAULT_BEDROCK_MODEL}`,
-            `fast:    ${FAST_BEDROCK_MODEL}`,
-            `env:     LUCRE_BEDROCK_MODEL`,
-            "set:     /model us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            `default (desk): ${DEFAULT_BEDROCK_MODEL}`,
+            `stronger:       ${STRONG_BEDROCK_MODEL}`,
+            `env:            LUCRE_BEDROCK_MODEL`,
+            "set:            /model <bedrock-model-id>",
           ],
         };
       }
-      return {
-        lines: [`model → ${args}`],
-        model: args,
-      };
+      return { lines: [`model → ${args}`], model: args };
     }
 
-    case "clear":
-    case "new":
-      return { clear: true, lines: ["(session cleared)"] };
-
     case "quit":
-    case "exit":
-    case "q":
       return { quit: true };
 
     default:
-      return {
-        lines: [`unknown /${name} — /help`],
-      };
+      return { lines: [`unknown /${name} — /help`] };
   }
 }
 
 export function autocompleteSlash(partial: string): string[] {
   const p = partial.replace(/^\//, "").toLowerCase();
-  return SLASH_COMMANDS.filter(
-    (c) =>
-      c.name.startsWith(p) || c.aliases?.some((a) => a.startsWith(p)),
-  ).map((c) => "/" + c.name);
+  return SLASH_COMMANDS.filter((c) => c.name.startsWith(p)).map(
+    (c) => "/" + c.name,
+  );
+}
+
+function formatBalance(): string {
+  const store = openStore(lucreHome());
+  if (!store.load().length) return "no ledger yet";
+  const state = store.reduce();
+  const cash = getCash(state) / 100;
+  const equity = getEquity(state) / 100;
+  const peak = state.peakEquityCents / 100;
+  const lmv = state.lastMark
+    ? state.lastMark.longMarketValueCents / 100
+    : null;
+  const lines = [
+    `cash     $${fmt(cash)}`,
+    `equity   $${fmt(equity)}`,
+    `peak     $${fmt(peak)}`,
+  ];
+  if (lmv !== null) lines.push(`long MV  $${fmt(lmv)}`);
+  lines.push(`open     ${getOpenOrders(state).length} order(s)`);
+  return lines.join("\n");
+}
+
+function formatProfit(): string {
+  const store = openStore(lucreHome());
+  const events = store.load();
+  if (!events.length) return "no ledger yet";
+  const state = store.reduce();
+  let startCash = 0;
+  for (const e of events) {
+    if (e.kind === "GENESIS") {
+      startCash = e.payload.startingCashCents / 100;
+      break;
+    }
+  }
+  const equity = getEquity(state) / 100;
+  const total = equity - startCash;
+  const totalPct = startCash > 0 ? (total / startCash) * 100 : 0;
+  let day: number | null = null;
+  let dayPct: number | null = null;
+  if (state.dayStartEquityCents && state.dayStartEquityCents > 0) {
+    day = equity - state.dayStartEquityCents / 100;
+    dayPct = (day / (state.dayStartEquityCents / 100)) * 100;
+  }
+  const sign = (n: number) => (n > 0 ? "+" : "") + fmt(n);
+  const lines = [
+    `start    $${fmt(startCash)}`,
+    `equity   $${fmt(equity)}`,
+    `total    ${sign(total)}  (${sign(totalPct)}%)`,
+  ];
+  if (day !== null && dayPct !== null) {
+    lines.push(`today    ${sign(day)}  (${sign(dayPct)}%)`);
+  }
+  return lines.join("\n");
+}
+
+function formatPositions(): string {
+  const store = openStore(lucreHome());
+  if (!store.load().length) return "no ledger yet";
+  const positions = getPositions(store.reduce());
+  if (!positions.length) return "no positions";
+  return positions
+    .map(
+      (p) =>
+        `${p.ticker.padEnd(6)}  qty ${(p.qtyMicros / 1e6).toFixed(4)}  avg $${(p.avgCostMicros / 1e6).toFixed(2)}`,
+    )
+    .join("\n");
+}
+
+function formatTrades(n: number): string {
+  const store = openStore(lucreHome());
+  const fills = store
+    .load()
+    .filter((e) => e.kind === "ORDER_FILLED")
+    .slice(-n);
+  if (!fills.length) return "no trades yet";
+  return fills
+    .map((e) => {
+      if (e.kind !== "ORDER_FILLED") return "";
+      const p = e.payload;
+      const qty = p.qtyMicros / 1e6;
+      const px = p.priceMicros / 1e6;
+      const notional = Math.abs(p.cashDeltaCents) / 100;
+      return `${e.createdAt.slice(0, 19)}  ${p.side.toUpperCase().padEnd(4)}  qty ${qty.toFixed(4)}  @ $${px.toFixed(2)}  ($${fmt(notional)})`;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function formatUsage(): string {
+  const store = openStore(lucreHome());
+  const events = store.load();
+  const monthKey = new Date().toISOString().slice(0, 7);
+  let cap = 1000; // default $10
+  let spent = 0;
+  let halted = false;
+  if (events.length) {
+    const state = store.reduce();
+    cap = state.risk.monthlySpendCapCents;
+    spent = getMonthSpend(state, monthKey);
+    halted = state.budgetHalted;
+  }
+  const sess = getSessionUsage();
+  const remain = Math.max(0, cap - spent);
+  const lines = [
+    `session  ${sess.turns} turn(s)  ${sess.inputTokens}→${sess.outputTokens} tok  ~${sess.costCents}¢`,
+    sess.modelLast ? `         last model ${sess.modelLast}` : null,
+    `month    ${monthKey}  ${spent}¢ spent  /  ${cap}¢ cap  (${remain}¢ left)`,
+    halted ? `halted   budget cap reached — analysis paused` : `halted   no`,
+  ].filter(Boolean) as string[];
+  return lines.join("\n");
+}
+
+function fmt(n: number): string {
+  return n.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }

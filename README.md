@@ -54,13 +54,17 @@ lucre                  # interactive CLI (Bedrock agent + tools)
 ```
 lucre
 › /status
-› what's my cash and chain health?
-› /sync
+› /balance
+› /profit
+› what's a sensible way to size AAPL here?
+› /model
 › /bash ls ~/.lucre
 › /quit
 ```
 
-Minimal Grok-style surface: status strip, slash commands, tool stream (`● bash` / `✓`), Bedrock Converse (AWS bearer token from `~/.tokens`).
+Core slash: `/status` `/balance` `/profit` `/positions` `/trades` `/usage` `/model` `/help` `/quit`.  
+Decide: chat (“run a decision”) or headless `lucre decide [--execute]`.  
+Desk default brain: **Bedrock Haiku** (`AWS_BEARER_TOKEN_BEDROCK`).
 
 ### Headless
 

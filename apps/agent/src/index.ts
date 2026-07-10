@@ -12,30 +12,28 @@ import { startTui } from "./tui/app.js";
 function usage(): never {
   console.log(`lucre — personal autonomous trading agent
 
-Interactive (Grok-style CLI):
-  lucre                         open the TUI
-  lucre tui                     same
-  lucre chat                    same
+Interactive desk:
+  lucre                         open the CLI
+  lucre tui | chat              same
+
+Desk slash (in TUI):
+  /status /balance /profit /positions /trades
+  /usage /model /help /quit
 
 Headless:
-  lucre init [--dry-run]              GENESIS from Alpaca paper cash
-  lucre sync [--dry-run] [--no-seed]  orphan sweep + reconcile vs Alpaca
-  lucre verify                        re-check hash chain + reduce
-  lucre status                        human summary of ledger state
-  lucre mandate seed-demo             install demo Lynch universe
-  lucre mandate import <file.json>    MANDATE_SET / CHANGED from JSON
-  lucre run [--brain stub|openai|terra] [--execute]
-                                      one decision cycle
-
-In the TUI:
-  chat freely (Bedrock agent + tools)
-  /status /sync /verify /run /bash /model /help /quit
+  lucre init
+  lucre decide [--execute] [--brain stub|openai|terra] [--dry-run]
+  lucre sync [--dry-run] [--no-seed]
+  lucre verify
+  lucre status
+  lucre mandate seed-demo | import <file.json>
+  lucre run …                   alias of decide (legacy)
 
 Env (~/.tokens auto-loaded):
   ALPACA_PAPER_KEY_ID / ALPACA_PAPER_SECRET_KEY
   AWS_BEARER_TOKEN_BEDROCK / AWS_REGION
-  LUCRE_BEDROCK_MODEL   (default us.anthropic.claude-sonnet-4-5-…)
-  LUCRE_HOME            (default ~/.lucre)
+  LUCRE_BEDROCK_MODEL           (default: Haiku profile)
+  LUCRE_HOME                    (default ~/.lucre)
 `);
   process.exit(1);
 }
@@ -57,7 +55,6 @@ async function main(): Promise<void> {
 
   await loadTokenStore();
 
-  // No args → interactive TUI (the product surface)
   if (cmd === undefined || cmd === "tui" || cmd === "chat" || cmd === "i") {
     const model = argValue(argv, "--model") || argValue(rest, "--model");
     await startTui({ model });
@@ -71,6 +68,26 @@ async function main(): Promise<void> {
         force: hasFlag(rest, "--force"),
       });
       break;
+    case "decide":
+    case "run": {
+      const brainRaw = argValue(rest, "--brain") ?? "stub";
+      const brain =
+        brainRaw === "openai" || brainRaw === "terra" || brainRaw === "stub"
+          ? brainRaw
+          : null;
+      if (!brain) {
+        console.error("--brain must be stub | openai | terra");
+        process.exitCode = 1;
+        break;
+      }
+      await cmdRun({
+        dryRun: hasFlag(rest, "--dry-run"),
+        allowBuy: hasFlag(rest, "--allow-buy"),
+        execute: hasFlag(rest, "--execute"),
+        brain,
+      });
+      break;
+    }
     case "sync":
       await cmdSync({
         dryRun: hasFlag(rest, "--dry-run"),
@@ -104,25 +121,6 @@ async function main(): Promise<void> {
       }
       break;
     }
-    case "run": {
-      const brainRaw = argValue(rest, "--brain") ?? "stub";
-      const brain =
-        brainRaw === "openai" || brainRaw === "terra" || brainRaw === "stub"
-          ? brainRaw
-          : null;
-      if (!brain) {
-        console.error("--brain must be stub | openai | terra");
-        process.exitCode = 1;
-        break;
-      }
-      await cmdRun({
-        dryRun: hasFlag(rest, "--dry-run"),
-        allowBuy: hasFlag(rest, "--allow-buy"),
-        execute: hasFlag(rest, "--execute"),
-        brain,
-      });
-      break;
-    }
     case "help":
     case "--help":
     case "-h":
@@ -133,10 +131,8 @@ async function main(): Promise<void> {
       console.log("lucre 0.1.0");
       break;
     default:
-      // Unknown subcommand: treat as a one-shot chat prompt? Or error.
-      // Prefer error with hint to open TUI.
       console.error(`unknown command: ${cmd}`);
-      console.error("run `lucre` for the interactive CLI, or `lucre --help`");
+      console.error("run `lucre` for the desk, or `lucre --help`");
       process.exitCode = 1;
   }
 }

@@ -89,7 +89,7 @@ export const TOOL_SPECS: BedrockToolSpec[] = [
     toolSpec: {
       name: "decision_run",
       description:
-        "Run one lucre decision cycle (stub or real brain). Does not place orders unless execute=true.",
+        "Run one lucre decision cycle (mark → legal moves → decide). Default brain=stub. Set execute=true only when the owner explicitly wants an order placed.",
       inputSchema: {
         json: {
           type: "object",
@@ -112,7 +112,8 @@ export const TOOL_SPECS: BedrockToolSpec[] = [
   {
     toolSpec: {
       name: "mandate_seed_demo",
-      description: "Install demo Lynch universe (AAPL, MSFT, …) if none set.",
+      description:
+        "Install demo invest-in-what-you-know universe if none is set yet.",
       inputSchema: {
         json: { type: "object", properties: {}, required: [] },
       },
