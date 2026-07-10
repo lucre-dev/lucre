@@ -52,20 +52,24 @@ lucre                  # interactive CLI (Bedrock agent + tools)
 ### Interactive CLI (the main product)
 
 ```
-lucre
+lucre                 # first run → setup; later → desk
+lucre --desk          # skip setup gate
+```
+
+**First run (one time, ledger state):** no GENESIS / no mandate → onboarding → type `RATIFY` → desk.  
+**Ready:** `lucre` opens the desk directly.
+
+```
 › /status
 › /balance
 › /profit
-› what's a sensible way to size AAPL here?
-› /model
-› /bash ls ~/.lucre
+› /usage
 › /quit
 ```
 
 Core slash: `/status` `/balance` `/profit` `/positions` `/trades` `/usage` `/model` `/help` `/quit`.  
-Decide: chat or `lucre decide [--execute]` (**Bedrock Sonnet** default).  
-Onboard: `lucre onboard` (interview → type `RATIFY`).  
-Schedule: `lucre install-agent` (launchd template, no `--execute` until you opt in).
+Decide: chat or `lucre decide [--execute]` (Bedrock Sonnet).  
+Schedule: `lucre install-agent`.
 
 ### Headless
 

@@ -8,6 +8,10 @@ import { cmdStatus } from "./commands/status.js";
 import { cmdSync } from "./commands/sync.js";
 import { cmdVerify } from "./commands/verify.js";
 import { printLaunchdInstall } from "./ops/launchd.js";
+import {
+  getDeskReadiness,
+  runFirstRunSetup,
+} from "./setup/firstRun.js";
 import { loadTokenStore } from "./tokens.js";
 import { startTui } from "./tui/app.js";
 
@@ -15,28 +19,29 @@ function usage(): never {
   console.log(`lucre — personal autonomous trading agent
 
 Interactive desk:
-  lucre                         open the CLI
-  lucre tui | chat              same
+  lucre                         first run → setup, else desk
+  lucre --desk                  skip setup gate, open desk
+  lucre tui | chat              same as lucre (honors setup gate)
+  lucre tui --desk              force desk
 
-Desk slash (in TUI):
+Desk slash:
   /status /balance /profit /positions /trades
   /usage /model /help /quit
 
 Headless:
-  lucre init
-  lucre decide [--execute] [--brain bedrock|stub|openai] [--dry-run]
-  lucre onboard                 mandate interview (RATIFY to commit)
-  lucre sync [--dry-run] [--no-seed]
-  lucre verify
-  lucre status
+  lucre init | onboard | decide [--execute]
+  lucre sync | verify | status
   lucre mandate seed-demo | import <file.json>
-  lucre install-agent           print launchd install steps
-  lucre run …                   alias of decide
+  lucre install-agent
+
+First run (state-based, one time):
+  no GENESIS / no mandate → onboarding until you type RATIFY
+  then desk opens automatically
 
 Env (~/.tokens auto-loaded):
   ALPACA_PAPER_KEY_ID / ALPACA_PAPER_SECRET_KEY
   AWS_BEARER_TOKEN_BEDROCK / AWS_REGION
-  LUCRE_BEDROCK_MODEL           (default: Sonnet 4.5 profile)
+  LUCRE_BEDROCK_MODEL           (default: Sonnet 4.5)
   LUCRE_HOME                    (default ~/.lucre)
 `);
   process.exit(1);
@@ -59,8 +64,33 @@ async function main(): Promise<void> {
 
   await loadTokenStore();
 
+  // Global skip: lucre --desk
+  if (cmd === "--desk" || cmd === "desk") {
+    await startTui({
+      model: argValue(argv, "--model") || argValue(rest, "--model"),
+    });
+    return;
+  }
+
   if (cmd === undefined || cmd === "tui" || cmd === "chat" || cmd === "i") {
     const model = argValue(argv, "--model") || argValue(rest, "--model");
+    const skipSetup =
+      hasFlag(argv, "--desk") ||
+      hasFlag(rest, "--desk") ||
+      hasFlag(argv, "--skip-onboard") ||
+      hasFlag(rest, "--skip-onboard");
+
+    if (!skipSetup) {
+      const gate = getDeskReadiness();
+      if (!gate.ready) {
+        const ok = await runFirstRunSetup();
+        if (!ok) {
+          process.exitCode = 1;
+          return;
+        }
+      }
+    }
+
     await startTui({ model });
     return;
   }
