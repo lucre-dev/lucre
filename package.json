@@ -7,7 +7,8 @@
     "build": "turbo build",
     "test": "turbo test",
     "typecheck": "turbo typecheck",
-    "lucre": "node apps/agent/dist/index.js"
+    "lucre": "node apps/agent/dist/index.js",
+    "link-cli": "pnpm --filter @lucre/agent exec npm link"
   },
   "devDependencies": {
     "turbo": "^2.5.0",

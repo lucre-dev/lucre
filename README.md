@@ -40,29 +40,42 @@ Keys live in `~/.tokens` (never in this repo):
 - `OPENAI_API_KEY` — decision/screen inference
 
 ```sh
-pnpm install
-pnpm build
-pnpm test
+pnpm install && pnpm build && pnpm test
 
-# CLI (keys from ~/.tokens)
-pnpm lucre init
-pnpm lucre sync
-pnpm lucre mandate seed-demo   # or: mandate import universe.json
-pnpm lucre run                              # stub brain
-pnpm lucre run --brain openai               # real model (OPENAI_API_KEY)
-pnpm lucre run --brain openai --execute     # decide + place limit if not WAIT
-pnpm lucre verify && pnpm lucre status
+# put `lucre` on your PATH
+pnpm link-cli
+# or: alias lucre='node /path/to/lucre/apps/agent/dist/index.js'
+
+lucre                  # interactive CLI (Bedrock agent + tools)
 ```
 
-Ledger: `~/.lucre/events.jsonl` (override with `LUCRE_HOME`).
+### Interactive CLI (the main product)
 
-## Costs
+```
+lucre
+› /status
+› what's my cash and chain health?
+› /sync
+› /bash ls ~/.lucre
+› /quit
+```
 
-Target all-in: **~$6–10/month**. Inference metered as `INFERENCE_RECORDED` against `monthlySpendCapCents` ($10 default). Alpaca free; local `launchd` scheduler (later).
+Minimal Grok-style surface: status strip, slash commands, tool stream (`● bash` / `✓`), Bedrock Converse (AWS bearer token from `~/.tokens`).
+
+### Headless
+
+```sh
+pnpm lucre init
+pnpm lucre sync
+pnpm lucre mandate seed-demo
+pnpm lucre run                 # stub decision cycle
+pnpm lucre verify
+```
+
+Ledger: `~/.lucre/events.jsonl` · keys: `~/.tokens` (`ALPACA_*`, `AWS_BEARER_TOKEN_BEDROCK`).
 
 ## Status
 
-- **M0** — types + pure core
-- **M1** — JSONL + Alpaca sync/verify
-- **M2** — stub brain, executor, SimBroker tests
-- **M3 (partial)** — OpenAI `decide()` + structured decision schema + spend metering
+- **M0–M2** — ledger, Alpaca, stub executor
+- **M3** — decision brains (OpenAI + Bedrock path)
+- **TUI** — `lucre` interactive agent CLI (slash + tools + bash)

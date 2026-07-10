@@ -6,25 +6,36 @@ import { cmdRun } from "./commands/run.js";
 import { cmdStatus } from "./commands/status.js";
 import { cmdSync } from "./commands/sync.js";
 import { cmdVerify } from "./commands/verify.js";
+import { loadTokenStore } from "./tokens.js";
+import { startTui } from "./tui/app.js";
 
 function usage(): never {
   console.log(`lucre — personal autonomous trading agent
 
-Usage:
+Interactive (Grok-style CLI):
+  lucre                         open the TUI
+  lucre tui                     same
+  lucre chat                    same
+
+Headless:
   lucre init [--dry-run]              GENESIS from Alpaca paper cash
   lucre sync [--dry-run] [--no-seed]  orphan sweep + reconcile vs Alpaca
   lucre verify                        re-check hash chain + reduce
   lucre status                        human summary of ledger state
-  lucre mandate seed-demo             install demo Lynch universe (AAPL…)
+  lucre mandate seed-demo             install demo Lynch universe
   lucre mandate import <file.json>    MANDATE_SET / CHANGED from JSON
-  lucre run [--brain stub|openai|terra] [--dry-run] [--allow-buy] [--execute]
-                                      one decision cycle (default brain=stub)
+  lucre run [--brain stub|openai|terra] [--execute]
+                                      one decision cycle
 
-Env:
-  ALPACA_PAPER_KEY_ID / ALPACA_PAPER_SECRET_KEY   (from ~/.tokens)
-  OPENAI_API_KEY                                (for --brain openai|terra)
-  LUCRE_DECISION_MODEL                          (default: ledger / gpt-4.1)
-  LUCRE_HOME   override data dir (default ~/.lucre)
+In the TUI:
+  chat freely (Bedrock agent + tools)
+  /status /sync /verify /run /bash /model /help /quit
+
+Env (~/.tokens auto-loaded):
+  ALPACA_PAPER_KEY_ID / ALPACA_PAPER_SECRET_KEY
+  AWS_BEARER_TOKEN_BEDROCK / AWS_REGION
+  LUCRE_BEDROCK_MODEL   (default us.anthropic.claude-sonnet-4-5-…)
+  LUCRE_HOME            (default ~/.lucre)
 `);
   process.exit(1);
 }
@@ -44,8 +55,14 @@ async function main(): Promise<void> {
   const cmd = argv[0];
   const rest = argv.slice(1);
 
-  // Load ~/.tokens if present (non-destructive)
-  await maybeSourceTokens();
+  await loadTokenStore();
+
+  // No args → interactive TUI (the product surface)
+  if (cmd === undefined || cmd === "tui" || cmd === "chat" || cmd === "i") {
+    const model = argValue(argv, "--model") || argValue(rest, "--model");
+    await startTui({ model });
+    return;
+  }
 
   switch (cmd) {
     case "init":
@@ -109,36 +126,18 @@ async function main(): Promise<void> {
     case "help":
     case "--help":
     case "-h":
-    case undefined:
       usage();
       break;
+    case "--version":
+    case "-V":
+      console.log("lucre 0.1.0");
+      break;
     default:
+      // Unknown subcommand: treat as a one-shot chat prompt? Or error.
+      // Prefer error with hint to open TUI.
       console.error(`unknown command: ${cmd}`);
-      usage();
-  }
-}
-
-async function maybeSourceTokens(): Promise<void> {
-  // Keys should already be in the environment if the user sourced ~/.tokens.
-  // As a convenience, parse export lines from ~/.tokens without executing shell.
-  if (process.env.ALPACA_PAPER_KEY_ID && process.env.ALPACA_PAPER_SECRET_KEY) {
-    return;
-  }
-  try {
-    const { readFile } = await import("node:fs/promises");
-    const { homedir } = await import("node:os");
-    const { join } = await import("node:path");
-    const text = await readFile(join(homedir(), ".tokens"), "utf8");
-    for (const line of text.split("\n")) {
-      const m = line.match(/^export\s+([A-Z0-9_]+)=(['"]?)(.*)\2\s*$/);
-      if (!m) continue;
-      const [, key, , val] = m;
-      if (key && val && process.env[key] === undefined) {
-        process.env[key] = val;
-      }
-    }
-  } catch {
-    // no tokens file — caller will error if keys required
+      console.error("run `lucre` for the interactive CLI, or `lucre --help`");
+      process.exitCode = 1;
   }
 }
 
