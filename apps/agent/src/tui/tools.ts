@@ -89,14 +89,14 @@ export const TOOL_SPECS: BedrockToolSpec[] = [
     toolSpec: {
       name: "decision_run",
       description:
-        "Run one lucre decision cycle (mark → legal moves → decide). Default brain=stub. Set execute=true only when the owner explicitly wants an order placed.",
+        "Run one lucre decision cycle (mark → legal moves → decide). Default brain=bedrock (Sonnet). execute=true only when owner explicitly wants an order. Same as: lucre decide",
       inputSchema: {
         json: {
           type: "object",
           properties: {
             brain: {
               type: "string",
-              description: "stub | openai | terra — default stub",
+              description: "bedrock | stub | openai | terra — default bedrock",
             },
             execute: {
               type: "boolean",
@@ -262,11 +262,14 @@ async function toolBrokerSnapshot(): Promise<ToolResult> {
 async function toolDecisionRun(
   input: Record<string, unknown>,
 ): Promise<ToolResult> {
-  const brainRaw = String(input.brain ?? "stub");
+  const brainRaw = String(input.brain ?? "bedrock");
   const brain =
-    brainRaw === "openai" || brainRaw === "terra" || brainRaw === "stub"
+    brainRaw === "openai" ||
+    brainRaw === "terra" ||
+    brainRaw === "stub" ||
+    brainRaw === "bedrock"
       ? brainRaw
-      : "stub";
+      : "bedrock";
   const logs: string[] = [];
   const orig = console.log;
   const origErr = console.error;

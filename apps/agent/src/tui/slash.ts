@@ -49,8 +49,8 @@ export async function handleSlash(line: string): Promise<SlashResult> {
           "commands",
           ...SLASH_COMMANDS.map((c) => `  /${c.name.padEnd(10)} ${c.desc}`),
           "",
-          "talk for strategy, decide, sync — the agent has tools.",
-          "headless: lucre decide [--execute]",
+          "talk for strategy / decide — agent tools.",
+          "headless: lucre decide | lucre onboard | lucre install-agent",
         ],
       };
 

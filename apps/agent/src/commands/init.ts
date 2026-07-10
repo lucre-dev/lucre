@@ -43,9 +43,9 @@ export async function cmdInit(opts: {
       paper: true,
       risk: DEFAULT_RISK_CONFIG,
       startingCashCents: cashCents,
-      decisionModel: "gpt-5.6-terra",
-      screenModel: "gpt-5.4-mini",
-      reviewModel: "gpt-5.6-sol",
+      decisionModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      screenModel: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+      reviewModel: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
     },
   };
 

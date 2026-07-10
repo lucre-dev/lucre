@@ -54,20 +54,20 @@ export interface BedrockClientOpts {
 }
 
 /**
- * Desk default: Haiku (cheap). Override with LUCRE_BEDROCK_MODEL.
- * On-demand Anthropic on Bedrock needs inference profile ids (`us.` / `global.`).
+ * Desk + decide default: Sonnet 4.5 (US inference profile).
+ * Override with LUCRE_BEDROCK_MODEL. Haiku remains available via /model or FAST_*.
  */
 export const DEFAULT_BEDROCK_MODEL =
   process.env.LUCRE_BEDROCK_MODEL?.trim() ||
-  "us.anthropic.claude-haiku-4-5-20251001-v1:0";
-
-/** Stronger desk brain when user `/model` upgrades. */
-export const STRONG_BEDROCK_MODEL =
-  process.env.LUCRE_BEDROCK_STRONG_MODEL?.trim() ||
   "us.anthropic.claude-sonnet-4-5-20250929-v1:0";
 
-/** @deprecated use STRONG_BEDROCK_MODEL */
-export const FAST_BEDROCK_MODEL = DEFAULT_BEDROCK_MODEL;
+/** Cheaper option for screens / light chat. */
+export const FAST_BEDROCK_MODEL =
+  process.env.LUCRE_BEDROCK_FAST_MODEL?.trim() ||
+  "us.anthropic.claude-haiku-4-5-20251001-v1:0";
+
+/** Alias — same as default (Sonnet). */
+export const STRONG_BEDROCK_MODEL = DEFAULT_BEDROCK_MODEL;
 
 export function createBedrockClient(opts: BedrockClientOpts = {}) {
   const region =

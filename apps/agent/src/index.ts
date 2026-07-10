@@ -2,10 +2,12 @@
 import { cmdInit } from "./commands/init.js";
 import { cmdMandateImport } from "./commands/mandateImport.js";
 import { cmdMandateSeedDemo } from "./commands/mandateSeedDemo.js";
+import { cmdOnboard } from "./commands/onboard.js";
 import { cmdRun } from "./commands/run.js";
 import { cmdStatus } from "./commands/status.js";
 import { cmdSync } from "./commands/sync.js";
 import { cmdVerify } from "./commands/verify.js";
+import { printLaunchdInstall } from "./ops/launchd.js";
 import { loadTokenStore } from "./tokens.js";
 import { startTui } from "./tui/app.js";
 
@@ -22,17 +24,19 @@ Desk slash (in TUI):
 
 Headless:
   lucre init
-  lucre decide [--execute] [--brain stub|openai|terra] [--dry-run]
+  lucre decide [--execute] [--brain bedrock|stub|openai] [--dry-run]
+  lucre onboard                 mandate interview (RATIFY to commit)
   lucre sync [--dry-run] [--no-seed]
   lucre verify
   lucre status
   lucre mandate seed-demo | import <file.json>
-  lucre run …                   alias of decide (legacy)
+  lucre install-agent           print launchd install steps
+  lucre run …                   alias of decide
 
 Env (~/.tokens auto-loaded):
   ALPACA_PAPER_KEY_ID / ALPACA_PAPER_SECRET_KEY
   AWS_BEARER_TOKEN_BEDROCK / AWS_REGION
-  LUCRE_BEDROCK_MODEL           (default: Haiku profile)
+  LUCRE_BEDROCK_MODEL           (default: Sonnet 4.5 profile)
   LUCRE_HOME                    (default ~/.lucre)
 `);
   process.exit(1);
@@ -70,13 +74,16 @@ async function main(): Promise<void> {
       break;
     case "decide":
     case "run": {
-      const brainRaw = argValue(rest, "--brain") ?? "stub";
+      const brainRaw = argValue(rest, "--brain") ?? "bedrock";
       const brain =
-        brainRaw === "openai" || brainRaw === "terra" || brainRaw === "stub"
+        brainRaw === "openai" ||
+        brainRaw === "terra" ||
+        brainRaw === "stub" ||
+        brainRaw === "bedrock"
           ? brainRaw
           : null;
       if (!brain) {
-        console.error("--brain must be stub | openai | terra");
+        console.error("--brain must be bedrock | stub | openai | terra");
         process.exitCode = 1;
         break;
       }
@@ -88,6 +95,13 @@ async function main(): Promise<void> {
       });
       break;
     }
+    case "onboard":
+    case "interview":
+      await cmdOnboard({ dryRun: hasFlag(rest, "--dry-run") });
+      break;
+    case "install-agent":
+      printLaunchdInstall();
+      break;
     case "sync":
       await cmdSync({
         dryRun: hasFlag(rest, "--dry-run"),

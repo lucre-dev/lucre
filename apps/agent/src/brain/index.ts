@@ -1,3 +1,5 @@
+import { createBedrockDecideBrain } from "./bedrockDecide.js";
+import { DEFAULT_BEDROCK_MODEL } from "./bedrock.js";
 import { createOpenAIBrain } from "./openai.js";
 import { resolveDecisionModel } from "./resolveModel.js";
 import { stubDecide } from "./stub.js";
@@ -7,9 +9,9 @@ export type { Brain, DecideContext, DecideResult } from "./types.js";
 export { parseDecisionJson } from "./parseDecision.js";
 export { stubDecide } from "./stub.js";
 export { createOpenAIBrain } from "./openai.js";
+export { createBedrockDecideBrain } from "./bedrockDecide.js";
 export { resolveDecisionModel } from "./resolveModel.js";
 
-/** Wrap stubDecide in the Brain interface. */
 export function createStubBrain(opts?: { allowBuy?: boolean }): Brain {
   return {
     name: "stub",
@@ -28,13 +30,19 @@ export function createStubBrain(opts?: { allowBuy?: boolean }): Brain {
   };
 }
 
-export type BrainKind = "stub" | "openai" | "terra";
+export type BrainKind = "stub" | "openai" | "terra" | "bedrock";
 
 export function createBrain(
   kind: BrainKind,
   opts?: { allowBuy?: boolean; model?: string },
 ): Brain {
   if (kind === "stub") return createStubBrain({ allowBuy: opts?.allowBuy });
+  if (kind === "bedrock") {
+    return createBedrockDecideBrain({
+      modelId: opts?.model || DEFAULT_BEDROCK_MODEL,
+    });
+  }
+  // openai | terra
   return createOpenAIBrain({
     model: resolveDecisionModel(opts?.model),
   });

@@ -199,8 +199,8 @@ function printBanner(modelId: string): void {
 
 function shortModel(id: string): string {
   if (!id) return "?";
-  if (id === DEFAULT_BEDROCK_MODEL || id.includes("haiku")) return "haiku";
-  if (id === STRONG_BEDROCK_MODEL || id.includes("sonnet")) return "sonnet";
+  if (id.includes("haiku")) return "haiku";
+  if (id === DEFAULT_BEDROCK_MODEL || id.includes("sonnet")) return "sonnet";
   const parts = id.split(/[./]/);
   return parts[parts.length - 1]?.slice(0, 28) || id.slice(0, 28);
 }

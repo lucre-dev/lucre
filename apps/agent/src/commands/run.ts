@@ -20,7 +20,7 @@ import { openStore } from "../store/jsonl.js";
 
 /**
  * One decision cycle.
- * --brain stub|openai|terra  (default stub)
+ * --brain bedrock|stub|openai|terra  (default bedrock)
  * Real LLM records INFERENCE_RECORDED and respects monthly spend cap.
  */
 export async function cmdRun(opts: {
@@ -39,7 +39,7 @@ export async function cmdRun(opts: {
     return;
   }
 
-  const brainKind: BrainKind = opts.brain ?? "stub";
+  const brainKind: BrainKind = opts.brain ?? "bedrock";
   loadAlpacaConfigFromEnv();
   const client = createAlpacaClient();
   const tradingDay = new Date().toISOString().slice(0, 10);
@@ -167,9 +167,13 @@ export async function cmdRun(opts: {
     });
   }
 
-  const modelHint = state.decisionModel || "gpt-4.1";
+  const modelHint =
+    process.env.LUCRE_BEDROCK_MODEL?.trim() ||
+    (brainKind === "bedrock"
+      ? "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+      : state.decisionModel || "gpt-4.1");
 
-  console.log(`brain: ${brainKind} modelHint=${modelHint}`);
+  console.log(`brain: ${brainKind} model=${modelHint}`);
   console.log(
     `spend ${monthKey}: ${getMonthSpend(state, monthKey)}¢ / cap ${state.risk.monthlySpendCapCents}¢`,
   );

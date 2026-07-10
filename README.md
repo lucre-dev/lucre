@@ -63,8 +63,9 @@ lucre
 ```
 
 Core slash: `/status` `/balance` `/profit` `/positions` `/trades` `/usage` `/model` `/help` `/quit`.  
-Decide: chat (“run a decision”) or headless `lucre decide [--execute]`.  
-Desk default brain: **Bedrock Haiku** (`AWS_BEARER_TOKEN_BEDROCK`).
+Decide: chat or `lucre decide [--execute]` (**Bedrock Sonnet** default).  
+Onboard: `lucre onboard` (interview → type `RATIFY`).  
+Schedule: `lucre install-agent` (launchd template, no `--execute` until you opt in).
 
 ### Headless
 
